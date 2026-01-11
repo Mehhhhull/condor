@@ -1,14 +1,14 @@
-# Candor
+# Candour
 
 **A trust layer between consumers and products.**
 
-Candor shows what real people on Reddit are saying about a product — raw, unfiltered, no marketing, no fake reviews.
+Candour shows what real people on Reddit are saying about a product — raw, unfiltered, no marketing, no fake reviews.
 
 If Reddit hates it, you should know before you buy.
 
 ---
 
-## What Candor Does (V1)
+## What Candour Does (V1)
 
 - Search any product name  
 - Fetch public Reddit posts & comments about it  
@@ -30,13 +30,17 @@ Influencers are paid.
 
 Reddit is the only place where people accidentally tell the truth.
 
-Candor makes that truth searchable.
+Candour makes that truth searchable.
 
 ---
+## Frontend Demo
 
+https://github.com/user-attachments/assets/74bf806a-b37a-4a01-9dff-9f7172ad90d3
+
+---
 ## Tech (MVP Stack)
 
-- Frontend: Next.js  
+- Frontend: React Vite, Tailwind, Framer motion
 - Backend: Node.js  
 - Data Source: Reddit public JSON / API  
 - Auth: None (V1 is open)  
@@ -54,4 +58,4 @@ This is Version 1 — ugly, fast, and honest.
 
 Before you buy anything, you should see what Reddit thinks.
 
-Candor makes that default.
+Candour makes that default.
