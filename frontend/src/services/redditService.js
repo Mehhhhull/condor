@@ -2,7 +2,7 @@
 class RedditService {
   constructor() {
     this.baseUrl = 'https://www.reddit.com';
-    // Use Reddit's RSS feeds which are more reliable
+    // Keep third-party CORS proxies as a development fallback
     this.corsProxies = [
       'https://corsproxy.org/?',
       'https://proxy.cors.sh/',
@@ -105,15 +105,49 @@ class RedditService {
   }
 
   async searchSubreddit(productName, subreddit) {
-    // First try JSON API
+    // First try the same-origin serverless proxy (deployed on Vercel)
     const searchUrl = `${this.baseUrl}/r/${subreddit}/search.json?q=${encodeURIComponent(productName)}&sort=relevance&limit=10&restrict_sr=1`;
-    
-    // Try different CORS proxies
+    try {
+      const response = await fetch(`/api/reddit?url=${encodeURIComponent(searchUrl)}`, {
+        headers: { 'User-Agent': 'Candour/1.0 (Product Research Tool)' }
+      });
+
+      if (response.ok) {
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        if (contentType.includes('application/json')) {
+          const data = await response.json();
+          if (data && data.data && data.data.children) {
+            return data.data.children.map(post => ({
+              id: post.data.id,
+              title: post.data.title,
+              url: post.data.url,
+              permalink: `${this.baseUrl}${post.data.permalink}`,
+              score: post.data.score,
+              num_comments: post.data.num_comments,
+              created: post.data.created_utc,
+              subreddit: post.data.subreddit,
+              author: post.data.author,
+              selftext: post.data.selftext,
+              upvote_ratio: post.data.upvote_ratio
+            }));
+          }
+        } else {
+          // Not JSON — maybe HTML or RSS; try parsing as RSS
+          const text = await response.text();
+          const posts = this.parseRSSFeed(text, subreddit);
+          if (posts.length) return posts;
+        }
+      }
+    } catch (err) {
+      console.warn('Serverless proxy attempt failed:', err);
+    }
+
+    // Fall back to the existing CORS proxies (useful during local development)
     for (let i = 0; i < this.corsProxies.length; i++) {
       try {
         const proxy = this.corsProxies[i];
         const proxiedUrl = proxy + encodeURIComponent(searchUrl);
-        
+
         const response = await fetch(proxiedUrl, {
           headers: {
             'User-Agent': 'Candour/1.0 (Product Research Tool)'
@@ -121,13 +155,13 @@ class RedditService {
         });
 
         if (!response.ok) continue;
-        
+
         const data = await response.json();
-        
+
         if (!data.data || !data.data.children) {
           throw new Error('Invalid Reddit response');
         }
-        
+
         return data.data.children.map(post => ({
           id: post.data.id,
           title: post.data.title,
@@ -141,43 +175,54 @@ class RedditService {
           selftext: post.data.selftext,
           upvote_ratio: post.data.upvote_ratio
         }));
-        
+
       } catch (error) {
         console.warn(`Proxy ${i + 1} failed:`, error);
         continue;
       }
     }
-    
-    // If JSON fails, try RSS feed as fallback
+
+    // If JSON fails, try RSS feed as fallback (will also try serverless first inside)
     try {
       return await this.searchSubredditRSS(productName, subreddit);
     } catch (error) {
       console.warn(`RSS fallback failed for r/${subreddit}:`, error);
     }
-    
+
     throw new Error(`All methods failed for r/${subreddit}`);
   }
 
   // Fallback method using RSS feeds
   async searchSubredditRSS(productName, subreddit) {
     const rssUrl = `${this.baseUrl}/r/${subreddit}/search.rss?q=${encodeURIComponent(productName)}&sort=relevance&limit=10&restrict_sr=1`;
-    
+
+    // Try serverless proxy first
+    try {
+      const response = await fetch(`/api/reddit?url=${encodeURIComponent(rssUrl)}`);
+      if (response.ok) {
+        const text = await response.text();
+        return this.parseRSSFeed(text, subreddit);
+      }
+    } catch (err) {
+      // ignore and fall back to third-party proxies
+    }
+
     for (let i = 0; i < this.corsProxies.length; i++) {
       try {
         const proxy = this.corsProxies[i];
         const proxiedUrl = proxy + encodeURIComponent(rssUrl);
-        
+
         const response = await fetch(proxiedUrl);
         if (!response.ok) continue;
-        
+
         const rssText = await response.text();
         return this.parseRSSFeed(rssText, subreddit);
-        
+
       } catch (error) {
         continue;
       }
     }
-    
+
     return [];
   }
 
@@ -217,28 +262,41 @@ class RedditService {
 
   // Fetch comments for a specific post
   async getPostComments(permalink) {
-    const jsonUrl = `${permalink}.json?limit=100&sort=top`; // Get top 100 comments, sorted by score
-    
-    // Try different CORS proxies
+    const jsonUrl = `${permalink}.json?limit=100&sort=top`;
+
+    // Try serverless proxy first
+    try {
+      const response = await fetch(`/api/reddit?url=${encodeURIComponent(jsonUrl)}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.length >= 2) {
+          return this.extractComments(data[1].data.children);
+        }
+      }
+    } catch (err) {
+      console.warn('Serverless comment fetch failed:', err);
+    }
+
+    // Fall back to third-party proxies
     for (let i = 0; i < this.corsProxies.length; i++) {
       try {
         const proxy = this.corsProxies[i];
         const proxiedUrl = proxy + encodeURIComponent(jsonUrl);
-        
+
         const response = await fetch(proxiedUrl);
         if (!response.ok) continue;
-        
+
         const data = await response.json();
-        
+
         if (data.length < 2) return [];
-        
+
         return this.extractComments(data[1].data.children);
       } catch (error) {
         console.warn(`Comment fetch failed with proxy ${i + 1}:`, error);
         continue;
       }
     }
-    
+
     console.warn('All proxies failed for comments');
     return [];
   }
